@@ -1,0 +1,83 @@
+version: '3'
+
+services:
+
+  postgresql:
+    restart: always
+    image: postgres:alpine
+    #container_name: gitlab_postgresql
+    environment:
+      - POSTGRES_USER=gitlab
+      - POSTGRES_PASSWORD=password
+      - POSTGRES_DB=gitlabhq_prod
+    volumes:
+      - '/srv/postgresql/lib:/var/lib/postgresql'
+      - '/srv/postgresql/data:/etc/postgresql'
+      - '/srv/postgresql/log:/var/log/postgresql'
+    networks:
+      - gitlab
+    labels:
+      - "traefik.enable=false"
+
+  redis:
+    restart: always
+    image: redis:3-alpine
+    #container_name: gitlab_redis
+    volumes:
+      - '/srv/redis/data:/data'
+    networks:
+      - gitlab
+    labels:
+      - "traefik.enable=false"
+
+  gitlab:
+    image: 'gitlab/gitlab-ce:latest'
+    restart: always
+    hostname: 'gitlab.mind7.fr'
+    #container_name: gitlab
+    environment:
+      GITLAB_OMNIBUS_CONFIG: |
+        postgresql['enable'] = false
+        gitlab_rails['db_username'] = "gitlab"
+        gitlab_rails['db_password'] = "password"
+        gitlab_rails['db_host'] = 'postgresql'
+        gitlab_rails['db_port'] = "5432"
+        gitlab_rails['db_database'] = "gitlabhq_prod"
+        gitlab_rails['db_adapter'] = "postgresql"
+        gitlab_rails['db_encoding'] = 'utf8'
+        redis['enable'] = false
+        gitlab_rails['redis_host'] = 'redis'
+        gitlab_rails['redis_port'] = '6379'
+        external_url 'https://gitlab.mind7.fr'
+        nginx['listen_port'] = 443
+        nginx['listen_https'] = false
+        nginx['proxy_set_headers'] = {
+          'X-Forwarded-Proto' => 'https',
+          'X-Forwarded-Ssl' => 'on',
+          'Host' => 'gitlab.mind7.fr'
+        }
+    ports:
+      - '22:22'
+    depends_on:
+      - redis
+      - postgresql
+    volumes:
+      - '/srv/gitlab/config:/etc/gitlab'
+      - '/srv/gitlab/logs:/var/log/gitlab'
+      - '/srv/gitlab/data:/var/opt/gitlab'
+    networks:
+      - proxy
+      - gitlab
+    labels:
+      - "traefik.backend=gitlab.mind7.fr"
+      - "traefik.frontend.rule=Host:gitlab.mind7.fr"
+      - "traefik.port=443"
+      - "traefik.docker.network=proxy"
+      - "traefik.frontend.entryPoints=https,http"
+     # - "traefik.frontend.headers.SSLRedirect=true"
+
+networks:
+  proxy:
+    external: true
+  gitlab:
+    external: false
